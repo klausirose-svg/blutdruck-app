@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blutdruck Tracker</title>
+    <title>Blutdruck Tracker Pro</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,19 +15,34 @@
         <h1 class="text-xl font-bold mb-4 text-blue-800 text-center">Blutdruck Tagebuch</h1>
         
         <div class="grid grid-cols-3 gap-2 mb-4">
-            <input type="number" id="sys" placeholder="SYS" class="p-2 border rounded text-center">
-            <input type="number" id="dia" placeholder="DIA" class="p-2 border rounded text-center">
-            <input type="number" id="pulse" placeholder="Puls" class="p-2 border rounded text-center">
+            <div class="text-center">
+                <label class="text-xs text-gray-500 block mb-1">SYS</label>
+                <input type="number" id="sys" placeholder="120" class="w-full p-2 border rounded text-center">
+            </div>
+            <div class="text-center">
+                <label class="text-xs text-gray-500 block mb-1">DIA</label>
+                <input type="number" id="dia" placeholder="80" class="w-full p-2 border rounded text-center">
+            </div>
+            <div class="text-center">
+                <label class="text-xs text-gray-500 block mb-1">Puls</label>
+                <input type="number" id="pulse" placeholder="70" class="w-full p-2 border rounded text-center">
+            </div>
         </div>
-        <button onclick="saveData()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-bold shadow-md active:bg-blue-800 mb-6">Speichern</button>
+        
+        <button onclick="saveData()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-bold shadow-md active:bg-blue-800 mb-6">
+            Messung speichern
+        </button>
 
         <canvas id="bpChart" class="mb-6"></canvas>
 
         <div class="flex justify-between items-center mb-4 border-t pt-4">
-            <h2 class="font-bold">Letzte Messungen</h2>
-            <button onclick="exportPDF()" class="text-red-500 text-sm font-bold border border-red-500 px-2 py-1 rounded">PDF</button>
+            <h2 class="font-bold">Verlauf</h2>
+            <button onclick="exportPDF()" class="text-red-500 text-sm font-bold border border-red-500 px-2 py-1 rounded hover:bg-red-50">
+                PDF Export
+            </button>
         </div>
-        <div id="history" class="space-y-2 overflow-y-auto max-h-48"></div>
+
+        <div id="history" class="space-y-2 overflow-y-auto max-h-64"></div>
     </div>
 
     <script>
@@ -38,7 +53,7 @@
             const dia = document.getElementById('dia').value;
             const pulse = document.getElementById('pulse').value;
             
-            if(!sys || !dia) return alert("Bitte Werte eingeben!");
+            if(!sys || !dia) return alert("Bitte Systole und Diastole eingeben!");
 
             const entry = {
                 sys: parseInt(sys),
@@ -52,22 +67,44 @@
             logs.push(entry);
             localStorage.setItem('bp_logs', JSON.stringify(logs));
             
+            // Felder leeren
             document.getElementById('sys').value = '';
             document.getElementById('dia').value = '';
             document.getElementById('pulse').value = '';
+            
             render();
+        }
+
+        function deleteEntry(index) {
+            if(confirm("Diesen Eintrag wirklich löschen?")) {
+                let logs = JSON.parse(localStorage.getItem('bp_logs') || '[]');
+                logs.splice(index, 1);
+                localStorage.setItem('bp_logs', JSON.stringify(logs));
+                render();
+            }
         }
 
         function render() {
             const logs = JSON.parse(localStorage.getItem('bp_logs') || '[]');
             const historyDiv = document.getElementById('history');
             
-            historyDiv.innerHTML = [...logs].reverse().map(l => `
-                <div class="${l.sys > 140 || l.dia > 90 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} p-2 rounded border flex justify-between items-center text-sm">
-                    <span><strong>${l.sys}/${l.dia}</strong> <small>(${l.pulse})</small></span>
-                    <span class="text-gray-500 text-xs">${l.date} ${l.time}</span>
+            // Umgekehrte Anzeige (neueste oben)
+            const displayLogs = [...logs].reverse();
+            
+            historyDiv.innerHTML = displayLogs.map((l, index) => {
+                const originalIndex = logs.length - 1 - index;
+                const isHigh = l.sys >= 140 || l.dia >= 90;
+                
+                return `
+                <div class="${isHigh ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} p-3 rounded border flex justify-between items-center transition-all">
+                    <div>
+                        <span class="text-lg font-bold">${l.sys}/${l.dia}</span> 
+                        <span class="text-gray-500 text-sm ml-2">Puls: ${l.pulse}</span>
+                        <div class="text-gray-400 text-[10px] uppercase font-semibold">${l.date} - ${l.time}</div>
+                    </div>
+                    <button onclick="deleteEntry(${originalIndex})" class="text-gray-300 hover:text-red-500 p-2 text-xl font-light">&times;</button>
                 </div>
-            `).join('');
+            `}).join('');
 
             updateChart(logs);
         }
@@ -75,16 +112,24 @@
         function updateChart(logs) {
             const ctx = document.getElementById('bpChart').getContext('2d');
             if (chart) chart.destroy();
+            
+            // Zeige nur die letzten 10 Messungen im Diagramm für bessere Übersicht
+            const chartLogs = logs.slice(-10);
+
             chart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: logs.map(l => l.date),
+                    labels: chartLogs.map(l => l.date),
                     datasets: [
-                        { label: 'SYS', data: logs.map(l => l.sys), borderColor: '#ef4444', tension: 0.2 },
-                        { label: 'DIA', data: logs.map(l => l.dia), borderColor: '#3b82f6', tension: 0.2 }
+                        { label: 'SYS', data: chartLogs.map(l => l.sys), borderColor: '#ef4444', tension: 0.3, fill: false },
+                        { label: 'DIA', data: chartLogs.map(l => l.dia), borderColor: '#3b82f6', tension: 0.3, fill: false }
                     ]
                 },
-                options: { plugins: { legend: { display: false } } }
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: false, min: 40 } }
+                }
             });
         }
 
@@ -92,20 +137,25 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             const logs = JSON.parse(localStorage.getItem('bp_logs') || '[]');
-            doc.text("Blutdruck Bericht", 14, 20);
+            
+            doc.setFontSize(18);
+            doc.text("Blutdruck-Protokoll", 14, 20);
+            doc.setFontSize(10);
+            doc.text("Erstellt am: " + new Date().toLocaleString('de-DE'), 14, 28);
+            
             doc.autoTable({
-                head: [['Datum', 'Uhrzeit', 'SYS', 'DIA', 'Puls']],
+                head: [['Datum', 'Zeit', 'SYS', 'DIA', 'Puls']],
                 body: logs.map(l => [l.date, l.time, l.sys, l.dia, l.pulse]),
-                startY: 25
+                startY: 35,
+                headStyles: { fillColor: [59, 130, 246] }
             });
-            doc.save("Blutdruck.pdf");
+            
+            doc.save("Blutdruckdaten.pdf");
         }
 
-        // Service Worker Registrierung
+        // Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(() => console.log("Service Worker registriert"))
-                .catch(err => console.log("Fehler:", err));
+            navigator.serviceWorker.register('sw.js');
         }
 
         render();
